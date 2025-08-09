@@ -1,0 +1,93 @@
+---
+- name: Install Anaconda, accept ToS, create env 'x', auto-activate in bash
+  hosts: localhost
+  become: yes
+  vars:
+    anaconda_version: "2025.06"
+    anaconda_installer: "Anaconda3-2025.06-0-Linux-x86_64.sh"
+    anaconda_prefix: "/opt/anaconda3"
+    conda_env_name: "x"
+    user_name: "{{ ansible_env.SUDO_USER | default(ansible_env.USER) }}"
+    user_home: "/home/{{ user_name }}"
+
+  tasks:
+    # --- Install Anaconda if not present ---
+    - name: Check if Anaconda is already installed
+      stat:
+        path: "{{ anaconda_prefix }}/bin/conda"
+      register: conda_bin
+
+    - name: Download Anaconda installer script
+      get_url:
+        url: "https://repo.anaconda.com/archive/{{ anaconda_installer }}"
+        dest: "/tmp/{{ anaconda_installer }}"
+        mode: '0755'
+      when: not conda_bin.stat.exists
+
+    - name: Run Anaconda installer
+      command: "bash /tmp/{{ anaconda_installer }} -b -p {{ anaconda_prefix }}"
+      when: not conda_bin.stat.exists
+
+    - name: Add Anaconda bin to PATH globally
+      lineinfile:
+        path: /etc/profile.d/anaconda.sh
+        line: "export PATH={{ anaconda_prefix }}/bin:$PATH"
+        create: yes
+      when: not conda_bin.stat.exists
+
+    - name: Remove installer after installation
+      file:
+        path: "/tmp/{{ anaconda_installer }}"
+        state: absent
+      when: not conda_bin.stat.exists
+
+    # --- Accept Anaconda Terms of Service (needed for conda create) ---
+    - name: Accept ToS for Anaconda main channel
+      command: "{{ anaconda_prefix }}/bin/conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main"
+      changed_when: false
+
+    - name: Accept ToS for Anaconda R channel
+      command: "{{ anaconda_prefix }}/bin/conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r"
+      changed_when: false
+
+    # --- Create environment 'x' if not exists ---
+    - name: Check if conda environment '{{ conda_env_name }}' exists
+      command: "{{ anaconda_prefix }}/bin/conda env list"
+      register: env_list
+      changed_when: false
+
+    - name: Create conda environment '{{ conda_env_name }}' if not present
+      command: "{{ anaconda_prefix }}/bin/conda create -y -n {{ conda_env_name }} python"
+      when: conda_env_name not in env_list.stdout
+
+    # --- Ensure conda initializes in bash ---
+    - name: Ensure conda initialization in .bashrc
+      blockinfile:
+        path: "{{ user_home }}/.bashrc"
+        marker: "# >>> conda initialize >>>"
+        block: |
+          __conda_setup="$('{{ anaconda_prefix }}/bin/conda' 'shell.bash' 'hook' 2> /dev/null)"
+          if [ $? -eq 0 ]; then
+              eval "$__conda_setup"
+          else
+              if [ -f "{{ anaconda_prefix }}/etc/profile.d/conda.sh" ]; then
+                  . "{{ anaconda_prefix }}/etc/profile.d/conda.sh"
+              else
+                  export PATH="{{ anaconda_prefix }}/bin:$PATH"
+              fi
+          fi
+          unset __conda_setup
+          # <<< conda initialize <<<
+      when: "'# >>> conda initialize >>>' not in lookup('file', user_home + '/.bashrc')"
+      become: no
+
+
+    # --- Auto activate environment 'x' in bash ---
+    - name: Auto-activate '{{ conda_env_name }}' in .bashrc
+      lineinfile:
+        path: "{{ user_home }}/.bashrc"
+        line: "conda activate {{ conda_env_name }}"
+        insertafter: EOF
+        state: present
+      when: "'conda activate ' ~ conda_env_name not in lookup('file', user_home + '/.bashrc')"
+      become: no

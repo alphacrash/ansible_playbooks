@@ -1,0 +1,29 @@
+---
+- name: Install Discord on Ubuntu using official .deb package (only if not present)
+  hosts: localhost
+  become: yes
+  tasks:
+
+    - name: Check if Discord is already installed
+      command: dpkg-query -W -f='${Status}' discord
+      register: discord_check
+      failed_when: false
+      changed_when: false
+
+    - name: Download Discord deb package
+      get_url:
+        url: https://discord.com/api/download?platform=linux&format=deb
+        dest: /tmp/discord.deb
+      when: "'installed' not in discord_check.stdout"
+
+    - name: Install Discord package
+      apt:
+        deb: /tmp/discord.deb
+        state: present
+      when: "'installed' not in discord_check.stdout"
+
+    - name: Remove Discord deb package
+      file:
+        path: /tmp/discord.deb
+        state: absent
+      when: "'installed' not in discord_check.stdout"

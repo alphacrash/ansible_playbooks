@@ -1,0 +1,6 @@
+---
+- import_playbook: setup_git.yml
+- import_playbook: setup_chrome.yml
+- import_playbook: setup_vscode.yml
+- import_playbook: setup_discord.yml
+- import_playbook: setup_anaconda.yml
