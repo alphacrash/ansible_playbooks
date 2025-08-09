@@ -1,0 +1,43 @@
+---
+- name: Configure Ubuntu dual boot with Windows settings
+  hosts: localhost
+  become: true
+
+  vars:
+    menuentry_pattern: "menuentry '.*?'"
+    digit_pattern: "\\d+"
+
+  tasks:
+
+    - name: Enable NTP time synchronization to sync time
+      ansible.builtin.command:
+        cmd: timedatectl set-ntp true
+      register: ntp_sync_result
+      changed_when: false
+
+    - name: Show NTP sync result
+      debug:
+        var: ntp_sync_result
+
+    - name: Install packages for Secure Boot support
+      ansible.builtin.apt:
+        name:
+          - shim-signed
+          - grub-efi-amd64-signed
+        state: present
+        update_cache: yes
+      register: secureboot_packages
+
+    - name: Show Secure Boot package install result
+      debug:
+        var: secureboot_packages
+
+    - name: Reinstall GRUB with Secure Boot support
+      ansible.builtin.command:
+        cmd: grub-install --target=x86_64-efi --uefi-secure-boot
+      register: grub_reinstall_result
+      changed_when: false
+
+    - name: Show grub reinstall output
+      debug:
+        var: grub_reinstall_result
